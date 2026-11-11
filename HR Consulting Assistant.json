@@ -1,0 +1,944 @@
+{
+  "name": "HR Consulting Assistant",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8ee8aff4-d317-42e5-a85f-ab73320da517",
+      "name": "Load Documents (run once)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fictional sample documents (no real data). Replace or extend with your own public documents.\nconst docs = [\n  {\n    source: 'Remote Work Policy (fictional)',\n    text: 'Employees of Northwind Consulting may work remotely up to three days per week. A remote work day must be agreed with the team lead at least one working day in advance. Core collaboration hours are 10:00 to 15:00 local time. Equipment for a home office is provided up to 400 EUR once every two years.'\n  },\n  {\n    source: 'Leave Policy (fictional)',\n    text: 'Full-time employees receive 25 days of paid annual leave per calendar year. Up to 5 unused days may be carried over until 31 March of the following year. A medical certificate is required for sick leave longer than three consecutive days. Leave requests are submitted in the HR portal at least two weeks ahead for periods longer than five days.'\n  },\n  {\n    source: 'Parental Leave Guide (fictional)',\n    text: 'Parents may take up to 16 weeks of paid parental leave within the first 12 months after the birth or adoption of a child. The leave can be split into at most two blocks. Employees must notify HR in writing at least eight weeks before the planned start date.'\n  },\n  {\n    source: 'Code of Conduct and Grievance Procedure (fictional)',\n    text: 'All employees are expected to treat colleagues and clients with respect. Concerns can be raised confidentially with the HR team or with the independent ombudsperson. HR acknowledges every grievance within three working days and aims to close the case within 30 days. Retaliation against anyone raising a concern in good faith is prohibited.'\n  },\n  {\n    source: 'Learning and Development Budget (fictional)',\n    text: 'Each employee has an annual learning budget of 1,500 EUR and five paid training days. Courses must be approved by the line manager before booking. Conference travel is covered under the same budget.'\n  }\n];\nreturn docs.map(d => ({ json: d }));"
+      },
+      "id": "25c16124-4edf-4d36-a00d-938e01b9d759",
+      "name": "Fictional HR Documents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "memoryKey": {
+          "__rl": true,
+          "mode": "id",
+          "value": "hr_consulting_docs"
+        },
+        "clearStore": true
+      },
+      "id": "40013fcf-63ed-4c5f-affd-4b50fd45d457",
+      "name": "Store Documents in Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.4,
+      "position": [
+        496,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "c5ebb74c-a21c-42e0-b4ea-10560207a7c5",
+      "name": "Embeddings (Ingest)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        512,
+        352
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.text }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "source",
+                "value": "={{ $json.source }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3bce883f-be7f-4e6e-9856-6f53c09ed47b",
+      "name": "Document Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "public": true,
+        "initialMessages": "Ask an HR consulting question. Answers come only from the document library and always cite their source.",
+        "options": {
+          "loadPreviousSession": "notSupported",
+          "responseMode": "responseNodes"
+        }
+      },
+      "id": "cc43957b-5d37-43d8-a4fe-8520f4617fbc",
+      "name": "Consultant Question",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        320
+      ],
+      "webhookId": "889076f3-1a90-4b3b-9432-9e8ca1e96650"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const original = String($input.item.json.chatInput || '');\nconst sessionId = $input.item.json.sessionId || '';\n\n// 1) Mask e-mail addresses\nlet masked = original.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/g, '[EMAIL]');\n\n// 2) Mask phone numbers (digit groups with at least 8 digits)\nmasked = masked.replace(/\\+?\\d[\\d\\s().-]{6,}\\d/g, function (m) {\n  const digits = m.replace(/\\D/g, '');\n  return digits.length >= 8 ? '[PHONE]' : m;\n});\n\n// 3) Flag sensitive questions (computed on the original text, never sent to the model)\nconst reasons = [];\nconst lower = original.toLowerCase();\nconst healthRe = /(health|medical|illness|sick|disabilit|pregnan|diagnos|therapy|mental|burnout|injur|cancer|surgery)/;\nconst rightsRe = /(rights|discriminat|harass|dismiss|terminat|fired|lawsuit|legal action|union|whistleblow|grievance|disciplin|retaliat)/;\nif (healthRe.test(lower)) reasons.push('health');\nif (rightsRe.test(lower)) reasons.push('personal rights');\nconst namedRe = /\\b(Mr|Mrs|Ms|Miss|Dr|Herr|Frau|Mme)\\.?\\s+[A-Z][a-z]+|\\b(employee|colleague|candidate|consultant|manager|client)\\s+(named\\s+)?[A-Z][a-z]+\\s+[A-Z][a-z]+/;\nif (masked !== original || namedRe.test(original)) reasons.push('named individual');\n\nreturn {\n  json: {\n    sessionId: sessionId,\n    maskedQuestion: masked,\n    sensitive: reasons.length > 0,\n    sensitiveReasons: reasons.join(', ')\n  }\n};"
+      },
+      "id": "08d8f8cd-b25c-4905-aa61-c90677ec3964",
+      "name": "Mask Personal Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.maskedQuestion }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are an internal HR consulting assistant. You answer ONLY from the passages returned by the tool search_hr_documents.\n\nRules:\n1. Always call search_hr_documents before answering.\n2. Use only facts found in the retrieved passages. Never use outside knowledge and never guess.\n3. Cite the source document name (metadata.source) of every passage you used, in the sources field, and mention it in the answer text, e.g. \"(Source: Leave Policy (fictional))\".\n4. If no retrieved passage is relevant to the question, set answer to \"I don't know\" and sources to an empty list.\n5. The question may contain placeholders such as [EMAIL] or [PHONE] for masked personal data. Never try to reconstruct them."
+        }
+      },
+      "id": "555ae42f-9452-499b-b057-6b58f9138dac",
+      "name": "HR Knowledge Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        640,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5.4-mini",
+          "cachedResultName": "gpt-5.4-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "55950644-9b60-4286-8ea5-01569bb06fa4",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        496,
+        672
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Search the HR document library. Always call this first. Returns passages with metadata.source (the document name).",
+        "memoryKey": {
+          "__rl": true,
+          "mode": "id",
+          "value": "hr_consulting_docs"
+        }
+      },
+      "id": "8d13ba6b-0463-4900-9c8c-14ba8f090119",
+      "name": "search_hr_documents",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.4,
+      "position": [
+        624,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "fe437dbe-eb24-45a8-a863-b70e0f17a806",
+      "name": "Embeddings (Query)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        704,
+        880
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\",\"description\":\"Answer based only on retrieved passages, or \\\"I don't know\\\"\"},\"sources\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Document names (metadata.source) of every passage used. Empty if none.\"}},\"required\":[\"answer\",\"sources\"]}"
+      },
+      "id": "2831eb62-a15f-4ba4-afff-44a1f7fc0126",
+      "name": "Answer Format",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        912,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "session_id",
+              "type": "string",
+              "value": "={{ $('Mask Personal Data').item.json.sessionId }}"
+            },
+            {
+              "id": "a2",
+              "name": "question_masked",
+              "type": "string",
+              "value": "={{ $('Mask Personal Data').item.json.maskedQuestion }}"
+            },
+            {
+              "id": "a3",
+              "name": "sensitive",
+              "type": "boolean",
+              "value": "={{ $('Mask Personal Data').item.json.sensitive }}"
+            },
+            {
+              "id": "a4",
+              "name": "sources",
+              "type": "string",
+              "value": "={{ ($json.output.sources || []).join(', ') }}"
+            },
+            {
+              "id": "a5",
+              "name": "answer",
+              "type": "string",
+              "value": "={{ ($json.output.sources || []).length > 0 ? $json.output.answer : \"I don't know. No relevant passage was found in the HR document library.\" }}"
+            },
+            {
+              "id": "a6",
+              "name": "reply",
+              "type": "string",
+              "value": "={{ ($json.output.sources || []).length > 0 ? $json.output.answer + '\\n\\nSources: ' + $json.output.sources.join(', ') : \"I don't know. No relevant passage was found in the HR document library.\" }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5d5ea12f-613f-4ed8-ad1b-b6047823ae8a",
+      "name": "Prepare Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1120,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sensitive }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "56d8f088-ad7f-4107-aab1-50a934770570",
+      "name": "Is Question Sensitive?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1344,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "message": "={{ 'This question was flagged as sensitive (' + $json.sensitiveReasons + '). A human must approve before the answer is shown.\\n\\nQuestion (masked): ' + $json.question_masked + '\\n\\nApprove to release the answer, or reject to withhold it.' }}",
+        "responseType": "approval",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "disapproveLabel": "Reject"
+          }
+        },
+        "options": {}
+      },
+      "id": "80cc15de-b5bb-4b45-81e2-6296c76c283e",
+      "name": "Ask Human to Approve",
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1.3,
+      "position": [
+        800,
+        448
+      ],
+      "webhookId": "af507d59-c590-42ab-9ba1-204c6ba226ca"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0f441fb-f022-4fb7-b86b-cfb3449b8d8b",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1024,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "message": "={{ $('Prepare Result').item.json.reply }}",
+        "options": {}
+      },
+      "id": "8f19925f-dc35-4629-9645-1c4e9eea965f",
+      "name": "Show Approved Answer",
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1.3,
+      "position": [
+        1248,
+        352
+      ],
+      "webhookId": "d7fb9283-3e17-46d7-8350-afad6130038c"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "p0BLZg0anMLockQv",
+          "cachedResultName": "hr_assistant_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_id": "={{ $('Prepare Result').item.json.session_id }}",
+            "question_masked": "={{ $('Prepare Result').item.json.question_masked }}",
+            "answer": "={{ $('Prepare Result').item.json.answer }}",
+            "sources": "={{ $('Prepare Result').item.json.sources }}",
+            "sensitive": "={{ $('Prepare Result').item.json.sensitive }}",
+            "human_decision": "approved"
+          },
+          "schema": [
+            {
+              "id": "session_id",
+              "displayName": "session_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "question_masked",
+              "displayName": "question_masked",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "answer",
+              "displayName": "answer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sources",
+              "displayName": "sources",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sensitive",
+              "displayName": "sensitive",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "human_decision",
+              "displayName": "human_decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f86cbdcc-629e-46b0-9d13-1924022f1cf9",
+      "name": "Log (approved)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1472,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "message": "A reviewer did not approve the answer to this sensitive question, so it is not shown. Please contact HR directly.",
+        "options": {}
+      },
+      "id": "826a3a93-d767-463e-a0ca-9a4b1796769f",
+      "name": "Tell User Answer Withheld",
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1.3,
+      "position": [
+        1248,
+        544
+      ],
+      "webhookId": "105eba69-ab0e-49bd-a674-74e6b7af3e9f"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "p0BLZg0anMLockQv",
+          "cachedResultName": "hr_assistant_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_id": "={{ $('Prepare Result').item.json.session_id }}",
+            "question_masked": "={{ $('Prepare Result').item.json.question_masked }}",
+            "answer": "={{ $('Prepare Result').item.json.answer }}",
+            "sources": "={{ $('Prepare Result').item.json.sources }}",
+            "sensitive": "={{ $('Prepare Result').item.json.sensitive }}",
+            "human_decision": "rejected"
+          },
+          "schema": [
+            {
+              "id": "session_id",
+              "displayName": "session_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "question_masked",
+              "displayName": "question_masked",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "answer",
+              "displayName": "answer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sources",
+              "displayName": "sources",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sensitive",
+              "displayName": "sensitive",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "human_decision",
+              "displayName": "human_decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4500d125-58cf-4a40-b792-870402b521a8",
+      "name": "Log (rejected)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1472,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "message": "={{ $json.reply }}",
+        "options": {}
+      },
+      "id": "0eecc8a8-dcae-4389-aa3c-1a86cd8868f1",
+      "name": "Show Answer",
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1.3,
+      "position": [
+        800,
+        544
+      ],
+      "webhookId": "100f9488-40b3-40c6-af18-677ada9e8a2d"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "p0BLZg0anMLockQv",
+          "cachedResultName": "hr_assistant_log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_id": "={{ $('Prepare Result').item.json.session_id }}",
+            "question_masked": "={{ $('Prepare Result').item.json.question_masked }}",
+            "answer": "={{ $('Prepare Result').item.json.answer }}",
+            "sources": "={{ $('Prepare Result').item.json.sources }}",
+            "sensitive": "={{ $('Prepare Result').item.json.sensitive }}",
+            "human_decision": "not_required"
+          },
+          "schema": [
+            {
+              "id": "session_id",
+              "displayName": "session_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "question_masked",
+              "displayName": "question_masked",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "answer",
+              "displayName": "answer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sources",
+              "displayName": "sources",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sensitive",
+              "displayName": "sensitive",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "human_decision",
+              "displayName": "human_decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "800700f9-581f-4ead-b099-376bd7b9a655",
+      "name": "Log (no review needed)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1024,
+        544
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Load Documents (run once)": {
+      "main": [
+        [
+          {
+            "node": "Fictional HR Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fictional HR Documents": {
+      "main": [
+        [
+          {
+            "node": "Store Documents in Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings (Ingest)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Store Documents in Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Store Documents in Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultant Question": {
+      "main": [
+        [
+          {
+            "node": "Mask Personal Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mask Personal Data": {
+      "main": [
+        [
+          {
+            "node": "HR Knowledge Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HR Knowledge Agent": {
+      "main": [
+        [
+          {
+            "node": "Prepare Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "HR Knowledge Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "search_hr_documents": {
+      "ai_tool": [
+        [
+          {
+            "node": "HR Knowledge Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings (Query)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "search_hr_documents",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer Format": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "HR Knowledge Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Result": {
+      "main": [
+        [
+          {
+            "node": "Is Question Sensitive?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Question Sensitive?": {
+      "main": [
+        [
+          {
+            "node": "Ask Human to Approve",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Show Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Human to Approve": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Show Approved Answer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tell User Answer Withheld",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Approved Answer": {
+      "main": [
+        [
+          {
+            "node": "Log (approved)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tell User Answer Withheld": {
+      "main": [
+        [
+          {
+            "node": "Log (rejected)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Answer": {
+      "main": [
+        [
+          {
+            "node": "Log (no review needed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "9eae6cb4-ddab-4011-8ea7-b457cd1ae8c9",
+  "meta": {
+    "instanceId": "ec6323f1ba9b55e5b9748af5146b5c0e69828fcfeb77485413bad79ea441dad9"
+  },
+  "nodeGroups": [
+    {
+      "id": "198a0c72-b7e1-4475-99c4-351419966f07",
+      "name": "Index HR documents",
+      "nodeIds": [
+        "25c16124-4edf-4d36-a00d-938e01b9d759",
+        "40013fcf-63ed-4c5f-affd-4b50fd45d457",
+        "c5ebb74c-a21c-42e0-b4ea-10560207a7c5",
+        "3bce883f-be7f-4e6e-9856-6f53c09ed47b"
+      ],
+      "description": "Run once by hand: loads the fictional HR documents into the vector store, keeping each document name as its source"
+    },
+    {
+      "id": "7dd490d3-acaf-42e7-89a0-98dcb1841eed",
+      "name": "Answer from documents",
+      "nodeIds": [
+        "08d8f8cd-b25c-4905-aa61-c90677ec3964",
+        "555ae42f-9452-499b-b057-6b58f9138dac",
+        "55950644-9b60-4286-8ea5-01569bb06fa4",
+        "fe437dbe-eb24-45a8-a863-b70e0f17a806",
+        "8d13ba6b-0463-4900-9c8c-14ba8f090119",
+        "2831eb62-a15f-4ba4-afff-44a1f7fc0126",
+        "5d5ea12f-613f-4ed8-ad1b-b6047823ae8a",
+        "56d8f088-ad7f-4107-aab1-50a934770570"
+      ],
+      "description": "Masks emails and phone numbers, answers only from retrieved passages with citations, and flags sensitive questions"
+    },
+    {
+      "id": "2f63ef8d-0d95-42a7-899c-c758d63d40a0",
+      "name": "Show answer and log",
+      "nodeIds": [
+        "0eecc8a8-dcae-4389-aa3c-1a86cd8868f1",
+        "800700f9-581f-4ead-b099-376bd7b9a655"
+      ],
+      "description": "Non-sensitive questions: the cited answer goes straight to the consultant and the exchange is logged"
+    },
+    {
+      "id": "2879666f-89f3-42a5-9b82-e062a98bd287",
+      "name": "Human review of sensitive answers",
+      "nodeIds": [
+        "80cc15de-b5bb-4b45-81e2-6296c76c283e",
+        "b0f441fb-f022-4fb7-b86b-cfb3449b8d8b",
+        "8f19925f-dc35-4629-9645-1c4e9eea965f",
+        "f86cbdcc-629e-46b0-9d13-1924022f1cf9",
+        "826a3a93-d767-463e-a0ca-9a4b1796769f",
+        "4500d125-58cf-4a40-b792-870402b521a8"
+      ],
+      "description": "A reviewer approves or rejects before anything is shown; the decision and outcome are logged"
+    }
+  ],
+  "id": "KxwaHgE1hI8Trg3X",
+  "tags": []
+}
