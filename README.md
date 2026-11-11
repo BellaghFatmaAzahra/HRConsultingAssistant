@@ -7,9 +7,52 @@ An AI-powered HR assistant built with **n8n, OpenAI, and Retrieval-Augmented Gen
 The HR Consulting Assistant is designed to help employees and HR teams access internal HR information more efficiently.
 
 Instead of generating answers from general knowledge, the assistant retrieves relevant information from a dedicated HR document library. It provides source-based answers and includes a human-in-the-loop mechanism for sensitive topics.
+
 ## Workflow Overview
 
+The complete n8n workflow, including document ingestion, question answering, sensitive-question routing, human review, and logging.
+
 ![Workflow Overview](screenshots/workflow-overview.png)
+
+## Screenshots
+
+The following screenshots illustrate the main components and demonstrate how the workflow behaves. Add the corresponding image files to the `screenshots/` folder in the repository.
+
+### 1. HR Document Ingestion
+
+Shows the five sample HR documents and the nodes used to load them, generate embeddings, and store them in the in-memory vector store.
+
+![HR Document Ingestion](screenshots/hr-document-ingestion.png)
+
+### 2. HR Knowledge Agent
+
+Shows the HR Knowledge Agent configuration, its OpenAI chat model, the `search_hr_documents` retrieval tool, and the structured answer format.
+
+![HR Knowledge Agent](screenshots/hr-knowledge-agent.png)
+
+### 3. Chatbot – Normal Question
+
+Example of a non-sensitive employee question and the assistant's answer grounded in the HR document library, including its source.
+
+![Chatbot Normal Question](screenshots/chatbot-normal-question.png)
+
+### 4. Sensitive Question Detection and Human Review
+
+Shows the sensitive-question branch and the human approval step. Capture the review request with a test question, then show the approval or rejection outcome if possible.
+
+![Sensitive Question Human Review](screenshots/human-review.png)
+
+### 5. Interaction Logging
+
+Shows the `hr_assistant_log` Data Table with an example interaction, including the masked question, answer, sources, sensitive flag, and human decision.
+
+![Interaction Logging](screenshots/interaction-logging.png)
+
+### 6. Fallback – No Relevant Information
+
+Example of a question that is not covered by the HR documents. The assistant should respond that it does not know rather than inventing an answer.
+
+![No Relevant Information](screenshots/no-relevant-information.png)
 
 ## Key Features
 
