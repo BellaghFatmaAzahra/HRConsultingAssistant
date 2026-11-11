@@ -16,7 +16,14 @@ The complete n8n workflow, including document ingestion, question answering, sen
 
 ## Screenshots
 
-The following screenshots illustrate the main components and demonstrate how the workflow behaves. Add the corresponding image files to the `screenshots/` folder in the repository.
+### . Chatbot – Normal Question
+
+![Chatbot Normal Question](screenshots/chatbot-normal-question.png)
+
+### . Sensitive Question Detection and Human Review
+
+![Sensitive Question Human Review](screenshots/human-review.png)
+
 
 ### 1. HR Document Ingestion
 
