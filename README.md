@@ -7,6 +7,9 @@ An AI-powered HR assistant built with **n8n, OpenAI, and Retrieval-Augmented Gen
 The HR Consulting Assistant is designed to help employees and HR teams access internal HR information more efficiently.
 
 Instead of generating answers from general knowledge, the assistant retrieves relevant information from a dedicated HR document library. It provides source-based answers and includes a human-in-the-loop mechanism for sensitive topics.
+## Workflow Overview
+
+![Workflow Overview](screenshots/workflow-overview.png)
 
 ## Key Features
 
