@@ -14,16 +14,6 @@ The complete n8n workflow, including document ingestion, question answering, sen
 
 ![Workflow Overview](screenshots/workflow-overview.png)
 
-## Screenshots
-
-### . Chatbot – Normal Question
-
-![Chatbot Normal Question](screenshots/chatbot-normal-question.png)
-
-### . Sensitive Question Detection and Human Review
-
-![Sensitive Question Human Review](screenshots/human-review.png)
-
 
 ### 1. HR Document Ingestion
 
@@ -47,7 +37,6 @@ Example of a non-sensitive employee question and the assistant's answer grounded
 
 Shows the sensitive-question branch and the human approval step. Capture the review request with a test question, then show the approval or rejection outcome if possible.
 
-![Sensitive Question Human Review](screenshots/human-review.png)
 
 ### 5. Interaction Logging
 
